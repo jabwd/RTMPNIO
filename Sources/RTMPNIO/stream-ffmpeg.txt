@@ -1,0 +1,1 @@
+ffmpeg -i output.mp4 -c:v libx264 -crf 23 -c:a aac -b:a 256k -f flv rtmp://127.0.0.1:1935

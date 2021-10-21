@@ -1,0 +1,25 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "swift-argument-parser",
+        "repositoryURL": "https://github.com/apple/swift-argument-parser",
+        "state": {
+          "branch": null,
+          "revision": "d2930e8fcf9c33162b9fcc1d522bc975e2d4179b",
+          "version": "1.0.1"
+        }
+      },
+      {
+        "package": "swift-nio",
+        "repositoryURL": "https://github.com/apple/swift-nio",
+        "state": {
+          "branch": null,
+          "revision": "6aa9347d9bc5bbfe6a84983aec955c17ffea96ef",
+          "version": "2.33.0"
+        }
+      }
+    ]
+  },
+  "version": 1
+}

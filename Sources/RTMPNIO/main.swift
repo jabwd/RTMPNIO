@@ -10,50 +10,57 @@ enum HeaderType: UInt8 {
 }
 
 final class RTMPSessionHandler: ChannelInboundHandler {
-  public typealias InboundIn = ByteBuffer
-  public typealias OutboundOut = ByteBuffer
+  public typealias InboundIn = RTMPPacket
+  public typealias OutboundOut = RTMPPacket
+
+  public let session: RTMPSession
+
+  init(session: RTMPSession) {
+    self.session = session
+  }
 
   public func channelActive(context: ChannelHandlerContext) {
     print("Channel connected")
   }
 
-  func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-    let byteBuffer = self.unwrapInboundIn(data)
-    let bytes = Array(byteBuffer.readableBytesView)
-
-    let basicHeaderByte = bytes[0]
-
-    guard let headerType = HeaderType(rawValue: (basicHeaderByte >> 14) & 0x3) else {
-      print("Unable to decode header type")
-      _ = context.channel.close()
-      return
-    }
-    let chunkStreamID = (basicHeaderByte & 0x3F)
-    print("Rcv pkt: Header=\(headerType), ChunkSID: \(chunkStreamID)")
-    switch headerType {
-    case .full:
-      // We skip the first byte since we decoded that above already
-      decodeFullHeader(slice: bytes[1..<12])
-      break
-    default:
-      print("Unhandled header type: \(headerType)")
-      _ = context.channel.close()
-      break
-    }
+  private func send(packet: RTMPPacket, context: ChannelHandlerContext) {
+    let data = self.wrapOutboundOut(packet)
+    _ = context.writeAndFlush(data)
   }
 
-  private func decodeFullHeader(slice: ArraySlice<UInt8>) {
-    // We have 11 bytes remaining if everything is going according to plan
-    precondition(slice.count == 11, "Decoding full header requires 11 bytes to be present in the slice")
+  func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    let packet = self.unwrapInboundIn(data)
+    print("Channel rcv: \(packet.type)")
 
-    // let timestampDelta = slice[slice.startIndex..<(slice.startIndex+3)]
-    let packetLength = slice[(slice.startIndex+3)..<(slice.startIndex+6)]
-    let packetLen = UInt32(packetLength[packetLength.startIndex]) | UInt32(packetLength[packetLength.startIndex+1]) | UInt32(packetLength[packetLength.startIndex+2])
-    let messageTypeID = slice[slice.startIndex+6]
-    let streamID = slice[(slice.startIndex+7)..<slice.startIndex+11]
-    print("streamID: \(streamID.count)")
-    let streamIDT = UInt32(streamID[8]) | UInt32(streamID[9]) | UInt32(streamID[10]) | UInt32(streamID[11])
-    print("Packet len: \(packetLen), messageType: \(messageTypeID), streamID: \(streamIDT)")
+    switch packet.type {
+    case .c0:
+      session.handshake.c0 = true
+      session.handshake.s0 = true
+      session.version = packet.version ?? .v3
+      send(packet: RTMPPacket(type: .s0, version: .v3), context: context)
+      break
+
+    case .c1:
+      session.handshake.c1 = true
+      session.handshake.s1 = true
+      session.handshake.s2 = true
+      let s1 = RTMPPacket(type: .s1, randomBytes: session.randomBytes, epoch: 0)
+      send(packet: s1, context: context)
+      let s2 = RTMPPacket(type: .s2, randomBytes: packet.randomBytes, epoch: packet.epoch)
+      session.clientRandomBytes = packet.randomBytes
+      session.clientEpoch = packet.epoch ?? 0
+      send(packet: s2, context: context)
+      break
+
+    case .c2:
+      session.handshake.c2 = true
+      print("Received C2")
+      break
+
+    default:
+      print("Received unhandled packet type: \(packet.type)")
+      break
+    }
   }
 
   public func channelInactive(context: ChannelHandlerContext) {
@@ -72,8 +79,15 @@ struct RTMPSink: ParsableCommand {
     .serverChannelOption(ChannelOptions.backlog, value: 256)
     .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
     .childChannelInitializer { channel in
-      return channel.pipeline.addHandler(RTMPSessionHandler())
+      let session = RTMPSession()
+      return channel.pipeline.addHandlers([
+        ByteToMessageHandler(RTMPPacketDecoder(session: session)),
+        MessageToByteHandler(RTMPPacketEncoder())
+      ]).flatMap { v in
+        channel.pipeline.addHandler(RTMPSessionHandler(session: session))
+      }
     }
+    .childChannelOption(ChannelOptions.recvAllocator, value: AdaptiveRecvByteBufferAllocator())
 
     defer {
       try! eventLoopGroup.syncShutdownGracefully()

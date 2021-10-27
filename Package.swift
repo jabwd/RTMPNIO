@@ -5,6 +5,9 @@ import PackageDescription
 
 let package = Package(
   name: "RTMPNIO",
+  platforms: [
+    .macOS(.v10_15)
+  ],
   dependencies: [
     .package(name: "swift-nio", url: "https://github.com/apple/swift-nio", from: "2.28.0"),
     .package(name: "swift-argument-parser", url: "https://github.com/apple/swift-argument-parser", from: "1.0.0"),

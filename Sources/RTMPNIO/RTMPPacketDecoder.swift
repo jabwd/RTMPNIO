@@ -15,43 +15,6 @@ enum RTMPVersion: UInt8 {
   // 4-35 is reserved
 }
 
-enum PacketType {
-  case c0
-  case s0
-  case c1
-  case s1
-  case c2
-  case s2
-
-  case rtmp
-}
-
-struct RTMPPacket {
-  let type: PacketType
-
-  /// Version request sent in the C0 at the beginning of the handshake
-  var version: RTMPVersion?
-
-  /// Random bytes sent by the client during the C1 packet of the handshake
-  var randomBytes: [UInt8]?
-
-  /// Epoch received from the client during the C1 packet of the handshake
-  /// or our epoch for validation during the C2 packet of the handshake
-  var epoch: UInt32?
-
-  init(
-    type: PacketType,
-    version: RTMPVersion? = nil,
-    randomBytes: [UInt8]? = nil,
-    epoch: UInt32? = nil
-  ) {
-    self.type = type
-    self.version = version
-    self.randomBytes = randomBytes
-    self.epoch = epoch
-  }
-}
-
 struct Handshake {
   var c0: Bool
   var c1: Bool
@@ -93,6 +56,8 @@ enum PacketDecodingError: Error {
   case unknownVersion
   case handshakeFailed(reason: String)
 
+  case decodingHeaderFailed
+
   case notImplemented
 }
 
@@ -102,6 +67,9 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
 
   public let session: RTMPSession
   public var buffer: ByteBuffer?
+
+  /// Stores previously received headers to complete existing received chunk packets from the same chunk stream
+  private var knownHeaders: [UInt8: RTMPPacket.Header] = [:]
 
   init(session: RTMPSession) {
     self.session = session
@@ -121,10 +89,10 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
         }
 
         // I currently don't give a flying fuck about this one
-        guard let readEpoch = buffer.readInteger(endianness: .little, as: UInt32.self) else {
-          throw PacketDecodingError.handshakeFailed(reason: "Cant decode read epoch from client2")
-        }
-        print("Read at: \(readEpoch)")
+//        guard let readEpoch = buffer.readInteger(endianness: .little, as: UInt32.self) else {
+//          throw PacketDecodingError.handshakeFailed(reason: "Cant decode read epoch from client2")
+//        }
+        buffer.moveReaderIndex(forwardBy: 4)
 
         guard let ourRandomBytes = buffer.readBytes(length: 1528) else {
           throw PacketDecodingError.handshakeFailed(reason: "Unable to read randomBytes from client")
@@ -170,43 +138,70 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
         context.fireChannelRead(self.wrapInboundOut(c1))
         return .continue
       }
-    } else {
-      print("Received a regular RTMP packet, probably. I can't hadle this yet so BYEEE")
-      let bytes = Array(buffer.readableBytesView)
-
-      let basicHeaderByte = bytes[0]
-
-      guard let headerType = HeaderType(rawValue: (basicHeaderByte >> 14) & 0x3) else {
-        _ = context.channel.close()
-        throw PacketDecodingError.handshakeFailed(reason: "Unable to decode header")
-      }
-      let chunkStreamID = (basicHeaderByte & 0x3F)
-      print("Rcv pkt: Header=\(headerType), ChunkSID: \(chunkStreamID)")
-      switch headerType {
-      case .full:
-        // We skip the first byte since we decoded that above already
-        decodeFullHeader(slice: bytes[1..<12])
-        break
-      default:
-        print("Unhandled header type: \(headerType)")
-        _ = context.channel.close()
-        break
-      }
     }
-    return .needMoreData
+
+    let basicHeaderByte = buffer.readInteger(endianness: .little, as: UInt8.self) ?? 0
+
+    guard let headerType = HeaderType(rawValue: (basicHeaderByte >> 14) & 0x3) else {
+      _ = context.channel.close()
+      throw PacketDecodingError.handshakeFailed(reason: "Unable to decode header")
+    }
+    let chunkStreamID = (basicHeaderByte & 0x3F)
+    // TODO: Need to support variable size chunk stream ID encoding still
+    print("Rcv pkt: Header=\(headerType), ChunkSID: \(chunkStreamID)")
+    if buffer.readableBytes < 11 {
+      // Reset the buffer reader so we can re-read the header byte once we get back into this function
+      buffer.moveReaderIndex(to: buffer.readerIndex - 1)
+      return .needMoreData
+    }
+    guard let header = decodeHeader(&buffer, type: headerType) else {
+      throw PacketDecodingError.decodingHeaderFailed
+    }
+    let packet = RTMPPacket(type: .rtmp, header: header, chunkStreamID: chunkStreamID)
+    let data = self.wrapInboundOut(packet)
+    context.fireChannelRead(data)
+    return .continue
   }
 
-  private func decodeFullHeader(slice: ArraySlice<UInt8>) {
-    // We have 11 bytes remaining if everything is going according to plan
-    precondition(slice.count == 11, "Decoding full header requires 11 bytes to be present in the slice")
+  private func decodeHeader(_ buffer: inout ByteBuffer, type: HeaderType) -> RTMPPacket.Header? {
+    if type == .basic {
+      // Means repeated header, should get the other one from somewhere somehow
+      return RTMPPacket.Header(messageID: .invalid)
+    }
 
-    // let timestampDelta = slice[slice.startIndex..<(slice.startIndex+3)]
-    let packetLength = slice[(slice.startIndex+3)..<(slice.startIndex+6)]
-    let packetLen = UInt32(packetLength[packetLength.startIndex]) | UInt32(packetLength[packetLength.startIndex+1]) | UInt32(packetLength[packetLength.startIndex+2])
-    let messageTypeID = slice[slice.startIndex+6]
-    let streamID = slice[(slice.startIndex+7)..<slice.startIndex+11]
-    print("streamID: \(streamID.count)")
-    let streamIDT = UInt32(streamID[8]) | UInt32(streamID[9]) | UInt32(streamID[10]) | UInt32(streamID[11])
-    print("Packet len: \(packetLen), messageType: \(messageTypeID), streamID: \(streamIDT)")
+    guard let timestampDeltaBytes = buffer.readBytes(length: 3) else {
+      return nil
+    }
+    let timestampDelta = UInt32(timestampDeltaBytes[0]) | UInt32(timestampDeltaBytes[1]) | UInt32(timestampDeltaBytes[2])
+    // Detect extended timestamp:
+    if timestampDelta == 0xFFFFFF {
+      print("Has extended timestamp, ignoring lol coz i don't care  right now")
+      return nil
+    }
+    if type == .basicAndTimestamp {
+      return RTMPPacket.Header(messageID: .invalid, timestampDelta: timestampDelta)
+    }
+    guard let packetLenBytes = buffer.readBytes(length: 3) else {
+      return nil
+    }
+    guard let messageID = MessageID(rawValue: buffer.readInteger(endianness: .little, as: UInt8.self) ?? 0) else {
+      return nil
+    }
+
+    let packetLen = UInt32(packetLenBytes[0]) | UInt32(packetLenBytes[1]) | UInt32(packetLenBytes[2])
+
+    if type == .noMessageID {
+      return RTMPPacket.Header(messageID: messageID, timestampDelta: timestampDelta, packetLength: packetLen)
+    }
+    guard let streamID = buffer.readInteger(endianness: .little, as: UInt32.self) else {
+      return nil
+    }
+
+    return RTMPPacket.Header(
+      messageID: messageID,
+      timestampDelta: timestampDelta,
+      packetLength: packetLen,
+      streamID: streamID
+    )
   }
 }

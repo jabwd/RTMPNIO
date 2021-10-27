@@ -30,7 +30,6 @@ final class RTMPSessionHandler: ChannelInboundHandler {
 
   func channelRead(context: ChannelHandlerContext, data: NIOAny) {
     let packet = self.unwrapInboundIn(data)
-    print("Channel rcv: \(packet.type)")
 
     switch packet.type {
     case .c0:
@@ -55,6 +54,10 @@ final class RTMPSessionHandler: ChannelInboundHandler {
     case .c2:
       session.handshake.c2 = true
       print("Received C2")
+      break
+
+    case .rtmp:
+      print("Channel rcv: \(packet.header.messageID), packetLen: \(packet.header.packetLength)")
       break
 
     default:

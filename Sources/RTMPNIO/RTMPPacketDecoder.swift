@@ -69,7 +69,7 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
   public var buffer: ByteBuffer?
 
   /// Stores previously received headers to complete existing received chunk packets from the same chunk stream
-  private var knownHeaders: [UInt8: RTMPPacket.Header] = [:]
+  private var knownHeaders: [UInt32: RTMPPacket.Header] = [:]
 
   init(session: RTMPSession) {
     self.session = session
@@ -146,15 +146,37 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
       _ = context.channel.close()
       throw PacketDecodingError.handshakeFailed(reason: "Unable to decode header")
     }
-    let chunkStreamID = (basicHeaderByte & 0x3F)
+    // ChunkStreamIDType FUCKING idiots
+
+    var chunkStreamID: UInt32 = UInt32(basicHeaderByte & 0x3F)
+    switch chunkStreamID {
+      // 2 Byte variant
+    case 0:
+      let bytes = buffer.readBytes(length: 1)!
+      chunkStreamID |= UInt32(bytes[0])
+      break
+
+      // 3 Byte variant
+    case 1:
+      let bytes = buffer.readBytes(length: 2)!
+      chunkStreamID = chunkStreamID | UInt32(bytes[0]) | UInt32(bytes[1])
+      break
+
+      // 2-63 chunkStreamID can be kept as-is, so we do nothing here
+    default:
+      break
+    }
+    // ChunkStreamID = 0 means this is the 2 byte version
+    // ChunkStreamID = 1 means this is the 3 byte version
     // TODO: Need to support variable size chunk stream ID encoding still
     print("Rcv pkt: Header=\(headerType), ChunkSID: \(chunkStreamID)")
+    // TODO: Actually properly *peek* how much data there should be here somehow
     if buffer.readableBytes < 11 {
       // Reset the buffer reader so we can re-read the header byte once we get back into this function
       buffer.moveReaderIndex(to: buffer.readerIndex - 1)
       return .needMoreData
     }
-    guard let header = decodeHeader(&buffer, type: headerType) else {
+    guard let header = decodeHeader(&buffer, chunkStreamID: chunkStreamID, type: headerType) else {
       throw PacketDecodingError.decodingHeaderFailed
     }
     let packet = RTMPPacket(type: .rtmp, header: header, chunkStreamID: chunkStreamID)
@@ -163,10 +185,12 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
     return .continue
   }
 
-  private func decodeHeader(_ buffer: inout ByteBuffer, type: HeaderType) -> RTMPPacket.Header? {
+  private func decodeHeader(_ buffer: inout ByteBuffer, chunkStreamID: UInt32, type: HeaderType) -> RTMPPacket.Header? {
     if type == .basic {
-      // Means repeated header, should get the other one from somewhere somehow
-      return RTMPPacket.Header(messageID: .invalid)
+      guard let header = knownHeaders[chunkStreamID] else {
+        return nil
+      }
+      return header
     }
 
     guard let timestampDeltaBytes = buffer.readBytes(length: 3) else {
@@ -179,6 +203,11 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
       return nil
     }
     if type == .basicAndTimestamp {
+      if let header = knownHeaders[chunkStreamID] {
+        let newHeader = RTMPPacket.Header(messageID: header.messageID, timestampDelta: timestampDelta, packetLength: header.packetLength, streamID: header.streamID)
+        knownHeaders[chunkStreamID] = newHeader
+        return newHeader
+      }
       return RTMPPacket.Header(messageID: .invalid, timestampDelta: timestampDelta)
     }
     guard let packetLenBytes = buffer.readBytes(length: 3) else {
@@ -191,17 +220,21 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
     let packetLen = UInt32(packetLenBytes[0]) | UInt32(packetLenBytes[1]) | UInt32(packetLenBytes[2])
 
     if type == .noMessageID {
-      return RTMPPacket.Header(messageID: messageID, timestampDelta: timestampDelta, packetLength: packetLen)
+      let header = RTMPPacket.Header(messageID: messageID, timestampDelta: timestampDelta, packetLength: packetLen)
+      knownHeaders[chunkStreamID] = header
+      return header
     }
     guard let streamID = buffer.readInteger(endianness: .little, as: UInt32.self) else {
       return nil
     }
-
-    return RTMPPacket.Header(
+    // A full header should be stored for later reference for the current chunkStreamID
+    let header = RTMPPacket.Header(
       messageID: messageID,
       timestampDelta: timestampDelta,
       packetLength: packetLen,
       streamID: streamID
     )
+    knownHeaders[chunkStreamID] = header
+    return header
   }
 }

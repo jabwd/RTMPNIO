@@ -43,7 +43,7 @@ enum MessageID: UInt8 {
 struct RTMPPacket {
   let type: PacketType
   let header: Header
-  let chunkStreamID: UInt8
+  let chunkStreamID: UInt32
 
   /// Version request sent in the C0 at the beginning of the handshake
   var version: RTMPVersion?
@@ -62,7 +62,7 @@ struct RTMPPacket {
   init(
     type: PacketType,
     header: Header? = nil,
-    chunkStreamID: UInt8 = 0,
+    chunkStreamID: UInt32 = 0,
     version: RTMPVersion? = nil,
     randomBytes: [UInt8]? = nil,
     epoch: UInt32? = nil

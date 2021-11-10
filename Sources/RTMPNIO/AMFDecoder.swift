@@ -79,7 +79,8 @@ final class AMFDecoder {
     let mustUnderstand = (bytes.readBytes(length: 1)?.first == 1)
     let headerLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
     var container: [String: Any] = [:]
-    let amfPayload = bytes.readSlice(length: Int(headerLength), container: container)
+    let amfPayload = bytes.readSlice(length: Int(headerLength))
+    decodeAMF(&bytes, container: &container)
   }
 
   private func decodeMessage(_ bytes: inout ByteBuffer, amfVersion: AMFVersion = .amf0) {
@@ -89,6 +90,8 @@ final class AMFDecoder {
     let responseURI = bytes.readString(length: Int(responseURILength))
     let messageLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
     let amfPayload = bytes.readSlice(length: Int(messageLength))
+    var container: [String: Any] = [:]
+    decodeAMF(&bytes, container: &container)
   }
 
   private func decodeAMF(_ bytes: inout ByteBuffer, container: inout [String: Any]) {

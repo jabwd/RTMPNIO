@@ -55,6 +55,8 @@ struct RTMPPacket {
   /// or our epoch for validation during the C2 packet of the handshake
   var epoch: UInt32?
 
+  var body: [UInt8]?
+
   var messageID: MessageID {
     return header.messageID
   }
@@ -65,7 +67,8 @@ struct RTMPPacket {
     chunkStreamID: UInt32 = 0,
     version: RTMPVersion? = nil,
     randomBytes: [UInt8]? = nil,
-    epoch: UInt32? = nil
+    epoch: UInt32? = nil,
+    body: [UInt8]? = nil
   ) {
     self.type = type
     if let header = header {
@@ -77,6 +80,7 @@ struct RTMPPacket {
     self.version = version
     self.randomBytes = randomBytes
     self.epoch = epoch
+    self.body = body
   }
 }
 

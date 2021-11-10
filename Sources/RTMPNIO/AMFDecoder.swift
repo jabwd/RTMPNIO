@@ -64,23 +64,32 @@ final class AMFDecoder {
   }
 
   func decode(_ bytes: inout ByteBuffer) -> DecodingState {
+    // bytes.readBytes(length: 13)
     let version = bytes.readInteger(endianness: .big, as: UInt16.self)
     let headerCount = bytes.readInteger(endianness: .big, as: UInt16.self)
+    print("V: \(version), headerCount: \(headerCount)")
     // variable header data
+    decodeHeader(&bytes)
     let messageCount = bytes.readInteger(endianness: .big, as: UInt16.self)
     // variable message data
+    print("Message count: \(messageCount)")
+    decodeMessage(&bytes)
 
     return .needMoreData
   }
 
   private func decodeHeader(_ bytes: inout ByteBuffer, amfVersion: AMFVersion = .amf0) {
     let nameLength = bytes.readInteger(endianness: .big, as: UInt16.self) ?? 0
+    print("name length: \(nameLength)")
     let name = bytes.readString(length: Int(nameLength))
+    print("Name: \(name)")
     let mustUnderstand = (bytes.readBytes(length: 1)?.first == 1)
     let headerLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
     var container: [String: Any] = [:]
-    let amfPayload = bytes.readSlice(length: Int(headerLength))
-    decodeAMF(&bytes, container: &container)
+    guard var amfPayload = bytes.readSlice(length: Int(headerLength)) else {
+      return
+    }
+    decodeAMF(&amfPayload, container: &container)
   }
 
   private func decodeMessage(_ bytes: inout ByteBuffer, amfVersion: AMFVersion = .amf0) {
@@ -89,9 +98,9 @@ final class AMFDecoder {
     let responseURILength = bytes.readInteger(endianness: .big, as: UInt16.self) ?? 0
     let responseURI = bytes.readString(length: Int(responseURILength))
     let messageLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
-    let amfPayload = bytes.readSlice(length: Int(messageLength))
+    var amfPayload = bytes.readSlice(length: Int(messageLength))!
     var container: [String: Any] = [:]
-    decodeAMF(&bytes, container: &container)
+    decodeAMF(&amfPayload, container: &container)
   }
 
   private func decodeAMF(_ bytes: inout ByteBuffer, container: inout [String: Any]) {

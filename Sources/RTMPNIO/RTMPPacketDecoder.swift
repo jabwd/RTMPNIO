@@ -6,6 +6,7 @@
 //
 
 import NIO
+import Foundation
 
 enum RTMPVersion: UInt8 {
   // 1-2 are no longer supported or something
@@ -179,7 +180,9 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
     guard let header = decodeHeader(&buffer, chunkStreamID: chunkStreamID, type: headerType) else {
       throw PacketDecodingError.decodingHeaderFailed
     }
-    let packet = RTMPPacket(type: .rtmp, header: header, chunkStreamID: chunkStreamID)
+    let packet = RTMPPacket(type: .rtmp, header: header, chunkStreamID: chunkStreamID, body: buffer.readBytes(length: Int(header.packetLength ?? 0)))
+    let dat = Data(packet.body ?? [])
+    print("dat: \(dat.base64EncodedString())")
     let data = self.wrapInboundOut(packet)
     context.fireChannelRead(data)
     return .continue

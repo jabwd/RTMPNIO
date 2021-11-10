@@ -58,6 +58,12 @@ final class RTMPSessionHandler: ChannelInboundHandler {
 
     case .rtmp:
       print("Channel rcv: \(packet.header.messageID), packetLen: \(packet.header.packetLength)")
+      if let body = packet.body {
+        print("Got a body: \(body.count)")
+        let decoder = AMFDecoder()
+        var buffer = ByteBuffer(bytes: body)
+        decoder.decode(&buffer)
+      }
       break
 
     default:

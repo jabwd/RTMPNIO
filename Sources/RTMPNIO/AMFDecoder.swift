@@ -85,7 +85,7 @@ final class AMFDecoder {
     print("Name: \(name)")
     let mustUnderstand = (bytes.readBytes(length: 1)?.first == 1)
     let headerLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
-    var container: [String: Any] = [:]
+    var container: [Any] = []
     guard var amfPayload = bytes.readSlice(length: Int(headerLength)) else {
       return
     }
@@ -98,12 +98,21 @@ final class AMFDecoder {
     let responseURILength = bytes.readInteger(endianness: .big, as: UInt16.self) ?? 0
     let responseURI = bytes.readString(length: Int(responseURILength))
     let messageLength = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
-    var amfPayload = bytes.readSlice(length: Int(messageLength))!
-    var container: [String: Any] = [:]
-    decodeAMF(&amfPayload, container: &container)
+    guard var amfPayload = bytes.readSlice(length: Int(messageLength)) else {
+      return
+    }
+    var container: [Any] = []
+    decodeAMF(&bytes, container: &container)
   }
 
-  private func decodeAMF(_ bytes: inout ByteBuffer, container: inout [String: Any]) {
+  struct AMFReference {
+    let index: Int
+  }
+
+  private func decodeAMF(_ bytes: inout ByteBuffer, container: inout [Any]) {
+    var emptyArray: [Any] = []
+    var associativeCount: UInt32 = 0
+    var emptyObject: [String: Any] = [:]
     repeat {
       guard let markerByte = bytes.readInteger(endianness: .big, as: UInt8.self),
             let marker = AMF0TypeMarker(rawValue: markerByte) else {
@@ -117,15 +126,46 @@ final class AMFDecoder {
         break
       case .string:
         let str = decodeString(&bytes) ?? ""
-        print("Decoded string: \"\(str)\"")
+          container.append(str)
         break
       case .boolean:
+        let byte = bytes.readBytes(length: 1)?.first ?? 0
+        container.append(byte != 0)
         break
       case .number:
+        let buff = bytes.readBytes(length: 8)
+        let value = buff!.withUnsafeBytes({ ptr in
+          ptr.bindMemory(to: Double.self).baseAddress!.pointee
+        })
+        container.append(value)
         break
       case .object:
         break
-      default:
+      case .reference:
+        let v = bytes.readInteger(endianness: .big, as: UInt16.self) ?? 0
+        container.append(AMFReference(index: Int(v)))
+        break
+      case .ecmaArray:
+        break
+      case .objectEnd:
+        break
+      case .strictArray:
+        break
+      case .date:
+        break
+      case .longString:
+        break
+      case .unsupported:
+        break
+      case .xmlDocument:
+        break
+      case .typedObject:
+        break
+      // these 2 are reserved and currently not supported (or even used by anything)
+      case .movieclip, .recordSet:
+        break
+      case .switchAMF3:
+        print("should switch to AMF3, but i don't want to :D")
         break
       }
     } while ( bytes.readableBytes >  0 )

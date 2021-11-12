@@ -56,7 +56,7 @@ enum AMFVersion: UInt16 {
     case amf3 = 0x03
 }
 
-final class AMFDecoder {
+final class AMFDecoderOld {
     var buff: ByteBuffer
 
     init() {
@@ -216,6 +216,11 @@ final class AMFDecoder {
 
     private func decodeString(_ bytes: inout ByteBuffer) -> String? {
         let length = bytes.readInteger(endianness: .big, as: UInt16.self) ?? 0
+        return bytes.readString(length: Int(length))
+    }
+
+    private func decodeLongString(_ bytes: inout ByteBuffer) -> String? {
+        let length = bytes.readInteger(endianness: .big, as: UInt32.self) ?? 0
         return bytes.readString(length: Int(length))
     }
 }

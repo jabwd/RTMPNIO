@@ -4,14 +4,16 @@ extension _AMFDecoder {
     final class SingleValueContainer {
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey : Any]
+        var referenceTable: [AMFDecodingContainer]
         var buffer: ByteBuffer
         var index: Int
 
-        init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any]) {
+        init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any], referenceTable: [AMFDecodingContainer]) {
             self.codingPath = codingPath
             self.userInfo = userInfo
             self.buffer = buffer
             self.index = self.buffer.readerIndex
+            self.referenceTable = referenceTable
         }
     }
 }
@@ -52,7 +54,6 @@ extension _AMFDecoder.SingleValueContainer : SingleValueDecodingContainer {
             let context = DecodingError.Context(codingPath: codingPath, debugDescription: "Expected string got \(marker)")
             throw DecodingError.typeMismatch(String.self, context)
         }
-        return ""
     }
 
     func decode(_ type: Double.Type) throws -> Double {
@@ -79,14 +80,6 @@ extension _AMFDecoder.SingleValueContainer : SingleValueDecodingContainer {
             throw DecodingError.typeMismatch(T.self, context)
         }
         return value
-    }
-
-    func decode(_ type: Date.Type) throws -> Date {
-
-    }
-
-    func decode(_ type: Data.Type) throws -> Data {
-
     }
 
     func decode<T>(_ type: T.Type) throws -> T where T : Decodable {

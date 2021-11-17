@@ -30,14 +30,48 @@ final class _AMFDecoder {
     var userInfo: [CodingUserInfoKey : Any] = [:]
 
     var container: AMFDecodingContainer?
-    fileprivate var buffer: ByteBuffer
+    var referenceTable: [AMFDecodingContainer]
 
-    init(buffer: ByteBuffer) {
+    fileprivate var buffer: BufferBox
+
+    init(buffer: ByteBuffer, referenceTable: [AMFDecodingContainer] = []) {
         self.buffer = buffer
+        self.referenceTable = referenceTable
     }
 }
 
-protocol AMFDecodingContainer: AnyObject {
+extension _AMFDecoder : Decoder {
+    func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> where Key : CodingKey {
+        precondition(container == nil)
+
+        let container = KeyedContainer<Key>(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)
+        referenceTable.append(container)
+        self.container = container
+
+        return KeyedDecodingContainer(container)
+    }
+
+    func unkeyedContainer() throws -> UnkeyedDecodingContainer {
+        precondition(container == nil)
+
+        let container = UnkeyedContainer(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)
+        referenceTable.append(container)
+        self.container = container
+
+        return container
+    }
+
+    func singleValueContainer() throws -> SingleValueDecodingContainer {
+        precondition(container == nil)
+
+        let container = SingleValueContainer(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)
+        self.container = container
+        return container
+    }
+
+}
+
+protocol AMFDecodingContainer : AnyObject {
     var codingPath: [CodingKey] { get set }
     var userInfo: [CodingUserInfoKey : Any] { get }
 

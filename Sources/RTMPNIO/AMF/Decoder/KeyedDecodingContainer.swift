@@ -9,7 +9,7 @@ extension _AMFDecoder {
         var className: String?
 
         lazy var nestedContainers: [String: AMFDecodingContainer] = {
-            return [:]
+            (try? resolveContainers()) ?? [:]
         }()
 
         init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: [AMFDecodingContainer] = []) {
@@ -30,8 +30,9 @@ extension _AMFDecoder {
 
         func resolveContainers() throws -> [String: AMFDecodingContainer] {
             do {
+                let previousIndex = buffer.readerIndex
                 let marker = try readMarker()
-
+                print("Resolving containers: \(marker)")
                 switch marker {
                 case .typedObject:
                     let classNameLength = try readInteger(as: UInt16.self)
@@ -42,6 +43,8 @@ extension _AMFDecoder {
                 case .ecmaArray:
                     return nestedContainersForECMAArray()
                 default:
+                    print("not a keyed container, resetting index")
+                    buffer.moveReaderIndex(to: previousIndex)
                     return [:]
                 }
             } catch {
@@ -60,6 +63,7 @@ extension _AMFDecoder {
                 var keyLength: UInt16 = try readInteger(as: UInt16.self)
                 while keyLength > 0 {
                     let key = try readString(length: Int(keyLength))
+                    print("key: \(key)")
                     nestedContainers[key] = readValue(key: key)
                     keyLength = try readInteger(as: UInt16.self)
                 }
@@ -115,6 +119,7 @@ extension _AMFDecoder {
             let keyedContainerNestedContainers = keyedContainer.nestedContainers
 
             if containers.isEmpty && keyedContainerNestedContainers.isEmpty {
+                print("Single value container?????")
                 let singleValueContainer = SingleValueContainer(
                     buffer: buffer,
                     codingPath: codingPath,

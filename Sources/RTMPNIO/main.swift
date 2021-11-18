@@ -2,6 +2,8 @@ import ArgumentParser
 import NIO
 import NIOPosix
 
+import Foundation
+
 enum HeaderType: UInt8 {
     case full = 0x0
     case noMessageID = 0x1
@@ -60,9 +62,18 @@ final class RTMPSessionHandler: ChannelInboundHandler {
             print("Channel rcv: \(packet.header.messageID), packetLen: \(String(describing: packet.header.packetLength))")
             if let body = packet.body {
                 print("Got a body: \(body.count)")
-                let decoder = AMFDecoderOld()
+                let decoder = AMFDecoder()
                 var buffer = ByteBuffer(bytes: body)
-                _ = decoder.decode(&buffer)
+                do {
+                    let command = try decoder.decodeCommand(ConnectCommand.self, from: &buffer)
+                    print("Command: \(command)")
+                } catch {
+                    print("\(error)")
+                }
+
+//                let decoder = RawAMFDecoder()
+//                var buffer = ByteBuffer(bytes: body)
+//                _ = decoder.decode(&buffer)
             }
             break
 

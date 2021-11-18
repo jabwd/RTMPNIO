@@ -17,12 +17,39 @@ final public class AMFDecoder {
      */
     public var userInfo: [CodingUserInfoKey : Any] = [:]
 
-    // public func decode<T>(_ type: T.Type, from data: Data) throws -> T where T : Decodable {
-    //     switch type {
-    //         case is Data.Type:
-    //         let box = try Box<Data>(from: decoder)
-    //     }
-    // }
+    public func decodeCommand<T>(_ argument: T.Type, from buffer: inout ByteBuffer) throws -> Command<T> where T : Decodable {
+        guard let byte = buffer.readBytes(length: 1)?.first, AMF0TypeMarker(rawValue: byte) == .string else {
+            let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command name, marker not a string")
+            throw DecodingError.dataCorrupted(context)
+        }
+        guard let length = buffer.readInteger(endianness: .big, as: UInt16.self), let name = buffer.readString(length: Int(length)) else {
+            let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command name")
+            throw DecodingError.dataCorrupted(context)
+        }
+        /*
+         let value = try readInteger(as: UInt64.self)
+         return Double(bitPattern: value)
+         */
+        guard let transMarkerByte = buffer.readBytes(length: 1)?.first, AMF0TypeMarker(rawValue: transMarkerByte) == .number else {
+            let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command transactionID, not a number marker")
+            throw DecodingError.dataCorrupted(context)
+        }
+        guard let transactionIDValue = buffer.readInteger(endianness: .big, as: UInt64.self) else {
+            let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command transactionID, unable to read value")
+            throw DecodingError.dataCorrupted(context)
+        }
+        let transactionID = Double(bitPattern: transactionIDValue)
+        let decoder = _AMFDecoder(buffer: buffer, referenceTable: [])
+        print("Decoding command: \(name):\(transactionID)")
+        let value = try T(from: decoder)
+        return Command<T>(name: name, transactionID: transactionID, argument: value)
+    }
+
+    public func decode<T>(_ type: T.Type, from data: Data) throws -> T where T : Decodable {
+        let buffer = ByteBuffer(bytes: data)
+        let decoder = _AMFDecoder(buffer: buffer, referenceTable: [])
+        return try T(from: decoder)
+    }
 }
 
 final class _AMFDecoder {
@@ -32,7 +59,7 @@ final class _AMFDecoder {
     var container: AMFDecodingContainer?
     var referenceTable: [AMFDecodingContainer]
 
-    fileprivate var buffer: BufferBox
+    fileprivate var buffer: ByteBuffer
 
     init(buffer: ByteBuffer, referenceTable: [AMFDecodingContainer] = []) {
         self.buffer = buffer
@@ -42,6 +69,7 @@ final class _AMFDecoder {
 
 extension _AMFDecoder : Decoder {
     func container<Key>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> where Key : CodingKey {
+        print("Decode keyed container")
         precondition(container == nil)
 
         let container = KeyedContainer<Key>(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)
@@ -52,6 +80,7 @@ extension _AMFDecoder : Decoder {
     }
 
     func unkeyedContainer() throws -> UnkeyedDecodingContainer {
+        print("Decode unkeyed container")
         precondition(container == nil)
 
         let container = UnkeyedContainer(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)
@@ -62,6 +91,7 @@ extension _AMFDecoder : Decoder {
     }
 
     func singleValueContainer() throws -> SingleValueDecodingContainer {
+        print("Decode single value container")
         precondition(container == nil)
 
         let container = SingleValueContainer(buffer: buffer, codingPath: codingPath, userInfo: userInfo, referenceTable: referenceTable)

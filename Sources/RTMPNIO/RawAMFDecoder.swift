@@ -8,30 +8,51 @@
 import Foundation
 import NIO
 
-final class AMFDecoderOld {
+struct ConnectCommand: Codable {
+    public let type: String
+    public let flashVersion: String
+    public let app: String?
+    public let tcURL: String?
+    public let swfURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case flashVersion = "flashVer"
+        case app
+        case tcURL = "tcUrl"
+        case swfURL = "swfUrl"
+    }
+}
+
+public struct Command<Argument> where Argument : Codable {
+    public let name: String
+    public let transactionID: Double
+    public let argument: Argument
+}
+
+final class RawAMFDecoder {
     var buff: ByteBuffer
 
     init() {
         buff = ByteBuffer()
     }
 
-    func decode(_ bytes: inout ByteBuffer) -> DecodingState {
+    func decode(_ bytes: inout ByteBuffer) -> [Any] {
         var container: [Any] = []
         decodeAMF(&bytes, container: &container)
-        print("Result: \(container)")
-        return .continue
-        // bytes.readBytes(length: 13)
-        let version = bytes.readInteger(endianness: .big, as: UInt16.self)
-        let headerCount = bytes.readInteger(endianness: .big, as: UInt16.self)
-        print("V: \(version), headerCount: \(headerCount)")
-        // variable header data
-        decodeHeader(&bytes)
-        let messageCount = bytes.readInteger(endianness: .big, as: UInt16.self)
-        // variable message data
-        print("Message count: \(messageCount)")
-        decodeMessage(&bytes)
-
-        return .needMoreData
+        return container
+//        // bytes.readBytes(length: 13)
+//        let version = bytes.readInteger(endianness: .big, as: UInt16.self)
+//        let headerCount = bytes.readInteger(endianness: .big, as: UInt16.self)
+//        print("V: \(version), headerCount: \(headerCount)")
+//        // variable header data
+//        decodeHeader(&bytes)
+//        let messageCount = bytes.readInteger(endianness: .big, as: UInt16.self)
+//        // variable message data
+//        print("Message count: \(messageCount)")
+//        decodeMessage(&bytes)
+//
+//        return .needMoreData
     }
 
     private func decodeHeader(_ bytes: inout ByteBuffer, amfVersion: AMFVersion = .amf0) {
@@ -141,6 +162,7 @@ final class AMFDecoderOld {
             case .date:
                 break
             case .longString:
+                container.append(decodeLongString(&bytes) ?? "")
                 break
             case .unsupported:
                 break

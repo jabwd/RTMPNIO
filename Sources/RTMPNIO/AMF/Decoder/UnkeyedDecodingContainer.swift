@@ -11,13 +11,18 @@ extension _AMFDecoder {
 
         lazy var count: Int? = {
             do {
+                let previousIndex = buffer.readerIndex
+                print("Checking count")
                 let marker = try readMarker()
+                print("read marker: \(marker)")
                 switch marker {
                 case .strictArray:
                     return Int(try readInteger(as: UInt32.self))
                 case .reference:
                     return -1
                 default:
+                    print("Not an unkeyed container, moving back the index")
+                    buffer.moveReaderIndex(to: previousIndex)
                     return nil
                 }
             } catch {
@@ -26,6 +31,7 @@ extension _AMFDecoder {
         }()
 
         lazy var nestedContainers: [AMFDecodingContainer] = {
+            print("Nested containers called")
             guard let count = self.count else {
                 return []
             }

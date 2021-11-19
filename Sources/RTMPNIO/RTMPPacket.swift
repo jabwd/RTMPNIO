@@ -5,7 +5,7 @@
 //  Created by Antwan van Houdt on 27/10/2021.
 //
 
-import Foundation
+import NIO
 
 enum PacketType {
     case c0
@@ -55,10 +55,18 @@ struct RTMPPacket {
     /// or our epoch for validation during the C2 packet of the handshake
     var epoch: UInt32?
 
-    var body: [UInt8]?
+    var body: ByteBuffer?
 
     var messageID: MessageID {
         return header.messageID
+    }
+
+    var length: Int {
+        return Int(header.packetLength ?? 0)
+    }
+
+    var bodyCount: Int {
+        return body?.readableBytes ?? 0
     }
 
     init(
@@ -68,7 +76,7 @@ struct RTMPPacket {
         version: RTMPVersion? = nil,
         randomBytes: [UInt8]? = nil,
         epoch: UInt32? = nil,
-        body: [UInt8]? = nil
+        body: ByteBuffer? = nil
     ) {
         self.type = type
         if let header = header {

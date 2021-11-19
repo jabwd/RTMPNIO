@@ -125,18 +125,13 @@ final class RawAMFDecoder {
                 container.append(byte != 0)
                 break
             case .number:
-                let buff = bytes.readBytes(length: 8)
-                let value = buff?.withUnsafeBytes({ ptr in
-                    ptr.bindMemory(to: Double.self).baseAddress!.pointee
-                })
+                let bytes = bytes.readInteger(endianness: .big, as: UInt64.self) ?? 0
+                let value = Double(bitPattern: bytes)
                 if let key = key {
                     emptyObject[key] = value
                     continue
                 }
-
-                if let v = value {
-                    container.append(v)
-                }
+                container.append(value)
                 break
             case .object:
                 inObject = true

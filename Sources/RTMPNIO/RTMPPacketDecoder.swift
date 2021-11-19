@@ -47,6 +47,9 @@ final class RTMPSession {
     let randomBytes: [UInt8]
     var handshake: Handshake
 
+    var receiveChunkSize: Int = 128
+    var sendChunkSize: Int = 128
+
     init() {
         randomBytes = [UInt8].random(bytes: 1528)!
         handshake = Handshake()
@@ -66,12 +69,52 @@ extension Data {
 }
 
 enum PacketDecodingError: Error {
+    case needMoreData
     case unknownVersion
     case handshakeFailed(reason: String)
+    case dataCorrupted(debugDescription: String)
 
     case decodingHeaderFailed
 
     case notImplemented
+}
+
+extension ByteBuffer {
+    mutating func readRTMPHeader() throws -> (HeaderType, UInt32, Int) {
+        let byte = readInteger(endianness: .little, as: UInt8.self) ?? 0
+        print("Byte: \(byte)")
+
+        guard let headerType = HeaderType(rawValue: (byte >> 6)) else {
+            throw PacketDecodingError.decodingHeaderFailed
+        }
+
+        var byteCount: Int = 1
+        var chunkStreamID: UInt32 = UInt32(byte & 0x3F)
+        switch chunkStreamID {
+            // 2 Byte variant
+        case 0:
+            guard let bytes = readBytes(length: 1) else {
+                throw PacketDecodingError.needMoreData
+            }
+            chunkStreamID |= UInt32(bytes[0])
+            byteCount = 2
+            break
+
+            // 3 Byte variant
+        case 1:
+            guard let bytes = readBytes(length: 2) else {
+                throw PacketDecodingError.needMoreData
+            }
+            chunkStreamID = chunkStreamID | UInt32(bytes[0]) | UInt32(bytes[1])
+            byteCount = 3
+            break
+
+            // 2-63 chunkStreamID can be kept as-is, so we do nothing here
+        default:
+            break
+        }
+        return (headerType, chunkStreamID, byteCount)
+    }
 }
 
 final class RTMPPacketDecoder: ByteToMessageDecoder {
@@ -83,6 +126,7 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
 
     /// Stores previously received headers to complete existing received chunk packets from the same chunk stream
     private var knownHeaders: [UInt32: RTMPPacket.Header] = [:]
+    private var unfinishedPackets: [UInt32: RTMPPacket] = [:]
 
     init(session: RTMPSession) {
         self.session = session
@@ -155,78 +199,143 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
             }
         }
 
-        let basicHeaderByte = buffer.readInteger(endianness: .little, as: UInt8.self) ?? 0
+        let startIndex = buffer.readerIndex
+        // TODO: Probably don't need the rtmpByteCount here anymore
+        print("Recv, idx \(startIndex)")
+        let (headerType, chunkStreamID, rtmpByteCount) = try buffer.readRTMPHeader()
+        print("HeaderType: \(headerType), ChunkStreamID: \(chunkStreamID)")
+        if headerType == .basic {
+            print("Got a basic header, looking for unfinished packets…")
+            if var packet = unfinishedPackets[chunkStreamID] {
+                let missingBytes = packet.length - packet.bodyCount
+                guard missingBytes > 0 else {
+                    throw PacketDecodingError.dataCorrupted(debugDescription: "Negative missing bytes detected, this should never happen")
+                }
+                let readableBytes = buffer.readableBytes
 
-        guard let headerType = HeaderType(rawValue: (basicHeaderByte >> 14) & 0x3) else {
-            _ = context.channel.close()
-            throw PacketDecodingError.handshakeFailed(reason: "Unable to decode header")
+                if missingBytes <= readableBytes {
+                    print("Finishing a packet for streamID \(chunkStreamID)")
+                    guard var chunk = buffer.readSlice(length: missingBytes) else {
+                        throw PacketDecodingError.dataCorrupted(debugDescription: "Unable to read chunk of size \(missingBytes) for aggregated body")
+                    }
+                    packet.body?.writeBuffer(&chunk)
+                    let data = self.wrapInboundOut(packet)
+                    unfinishedPackets[chunkStreamID] = nil
+                    context.fireChannelRead(data)
+                    return .continue
+                } else if readableBytes >= session.receiveChunkSize {
+                    print("Received a chunk for streamID \(chunkStreamID), waiting for more chunks")
+                    guard var chunk = buffer.readSlice(length: session.receiveChunkSize) else {
+                        throw PacketDecodingError.dataCorrupted(debugDescription: "Unable to read chunk of size \(session.receiveChunkSize) for aggregated body")
+                    }
+                    packet.body?.writeBuffer(&chunk)
+                    unfinishedPackets[chunkStreamID] = packet
+
+                    // Packet is not done here, so we wait for more data
+                    return .needMoreData
+                } else {
+                    // We don't have enough data to complete reading the packet or there is not enough data
+                    // to read the set chunk size for this session, so we simply stop, return and wait for more data
+                    buffer.moveReaderIndex(to: startIndex)
+                    return .needMoreData
+                }
+            } else {
+                // I don't think this should technically happen, but i don't know how to handle it right now
+                print("No previously known packet found, basic header is probably an error")
+                buffer.moveReaderIndex(to: startIndex)
+                return .needMoreData
+            }
         }
-        // ChunkStreamIDType FUCKING idiots
 
-        var chunkStreamID: UInt32 = UInt32(basicHeaderByte & 0x3F)
-        print("ChunkStreamID: \(chunkStreamID)")
-        switch chunkStreamID {
-        // 2 Byte variant
-        case 0:
-            let bytes = buffer.readBytes(length: 1)!
-            chunkStreamID |= UInt32(bytes[0])
-            break
-
-        // 3 Byte variant
-        case 1:
-            let bytes = buffer.readBytes(length: 2)!
-            chunkStreamID = chunkStreamID | UInt32(bytes[0]) | UInt32(bytes[1])
-            break
-
-        // 2-63 chunkStreamID can be kept as-is, so we do nothing here
-        default:
-            break
-        }
-        // ChunkStreamID = 0 means this is the 2 byte version
-        // ChunkStreamID = 1 means this is the 3 byte version
-        // TODO: Need to support variable size chunk stream ID encoding still
-        print("Rcv pkt: Header=\(headerType), ChunkSID: \(chunkStreamID)")
-        // TODO: Actually properly *peek* how much data there should be here somehow
-        if buffer.readableBytes < 11 {
-            // Reset the buffer reader so we can re-read the header byte once we get back into this function
-            buffer.moveReaderIndex(to: buffer.readerIndex - 1)
-            return .needMoreData
-        }
-        guard let header = decodeHeader(&buffer, chunkStreamID: chunkStreamID, type: headerType) else {
+        // TODO: Probably don't need the byteCount field here anymore
+        let headerResult = decodeHeader(&buffer, chunkStreamID: chunkStreamID, type: headerType)
+        guard let header = headerResult.0 else {
+            print("Decoding header failed ??")
             throw PacketDecodingError.decodingHeaderFailed
         }
-      print("Packet length: \(header.packetLength)")
+
+        // Determine whether we have a body to read!
+        var body: ByteBuffer?
+        let length = Int(header.packetLength ?? 0)
+        if length > 0 {
+            print("Length: \(length)")
+            let byteCount = length > session.receiveChunkSize ? session.receiveChunkSize : length
+            print("ByteCount: \(byteCount)")
+            body = buffer.readSlice(length: byteCount)
+        }
         let packet = RTMPPacket(
             type: .rtmp,
             header: header,
             chunkStreamID: chunkStreamID,
-            body: buffer.readBytes(length: Int(header.packetLength ?? 0))
+            body: body
         )
-        let dat = Data(packet.body ?? [])
-        print("dat: \(dat.count) \(dat.hexEncodedString(options: []))")
+
+        if packet.length > packet.bodyCount {
+            print("Need more packet body data still, saving for later")
+            unfinishedPackets[chunkStreamID] = packet
+            print("Readable bytes left: \(buffer.readableBytes) \(buffer.readerIndex)")
+            return .continue
+        }
+
+        // If we fall through here the packet should be finished and ready to be decoded further
         let data = self.wrapInboundOut(packet)
         context.fireChannelRead(data)
         return .continue
+
+//        guard var chunk = buffer.readSlice(length: session.receiveChunkSize) else {
+//            throw PacketDecodingError.dataCorrupted(debugDescription: "Unable to read chunk from byte stream")
+//        }
+
+
+//        let remainingMaxBytes = session.receiveChunkSize - rtmpByteCount
+//
+//        if var existingPacket = unfinishedPackets[chunkStreamID] {
+//            print("Found previous unfinished packet, chunkSID: \(chunkStreamID)")
+//            let missingBytes = Int(existingPacket.header.packetLength ?? 0) - (existingPacket.body?.readableBytes ?? 0)
+//            print("Missing bytes: \(missingBytes)")
+//            var length = missingBytes
+//            // Multi byte fucking chunkStreamID will fail here.
+//            if length > 127 {
+//
+//            }
+//        }
+
+
+//        let result = decodeHeader(&chunk, chunkStreamID: chunkStreamID, type: headerType)
+//        guard let header = result.0 else {
+//            throw PacketDecodingError.decodingHeaderFailed
+//        }
+//        let packet = RTMPPacket(
+//            type: .rtmp,
+//            header: header,
+//            chunkStreamID: chunkStreamID,
+//            body: chunk.readSlice(length: Int(header.packetLength ?? 0))
+//        )
+//        // let dat = Data(packet.body ?? [])
+//        // print("dat: \(dat.count) \(dat.hexEncodedString(options: []))")
+//        let data = self.wrapInboundOut(packet)
+//        context.fireChannelRead(data)
     }
 
-    private func decodeHeader(_ buffer: inout ByteBuffer, chunkStreamID: UInt32, type: HeaderType) -> RTMPPacket.Header?
-    {
+    private func peekPacketLength(_ buffer: inout ByteBuffer) -> Int {
+        let startIndex = buffer.readerIndex
+        return 0
+    }
+
+    private func decodeHeader(_ buffer: inout ByteBuffer, chunkStreamID: UInt32, type: HeaderType) -> (RTMPPacket.Header?, Int) {
         if type == .basic {
-            guard let header = knownHeaders[chunkStreamID] else {
-                return nil
-            }
-            return header
+            return (nil, 0)
         }
 
         guard let timestampDeltaBytes = buffer.readBytes(length: 3) else {
-            return nil
+            return (nil, 0)
         }
         let timestampDelta =
             UInt32(timestampDeltaBytes[0]) | UInt32(timestampDeltaBytes[1]) | UInt32(timestampDeltaBytes[2])
         // Detect extended timestamp:
         if timestampDelta == 0xFFFFFF {
             print("Has extended timestamp, ignoring lol coz i don't care  right now")
-            return nil
+            return (nil, 3)
         }
         if type == .basicAndTimestamp {
             if let header = knownHeaders[chunkStreamID] {
@@ -236,16 +345,15 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
                     packetLength: header.packetLength,
                     streamID: header.streamID
                 )
-                knownHeaders[chunkStreamID] = newHeader
-                return newHeader
+                return (newHeader, 3)
             }
-            return RTMPPacket.Header(messageID: .invalid, timestampDelta: timestampDelta)
+            return (RTMPPacket.Header(messageID: .invalid, timestampDelta: timestampDelta), 3)
         }
         guard let packetLenBytes = buffer.readBytes(length: 3) else {
-            return nil
+            return (nil, 3)
         }
-        guard let messageID = MessageID(rawValue: buffer.readInteger(endianness: .little, as: UInt8.self) ?? 0) else {
-            return nil
+        guard let messageID = MessageID(rawValue: buffer.readInteger(endianness: .big, as: UInt8.self) ?? 0) else {
+            return (nil, 6)
         }
 
         let packetLen = UInt32(packetLenBytes[0]) | UInt32(packetLenBytes[1]) | UInt32(packetLenBytes[2])
@@ -256,11 +364,11 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
                 timestampDelta: timestampDelta,
                 packetLength: packetLen
             )
-            knownHeaders[chunkStreamID] = header
-            return header
+            return (header, 7)
         }
-        guard let streamID = buffer.readInteger(endianness: .little, as: UInt32.self) else {
-            return nil
+        guard let streamID = buffer.readInteger(endianness: .big, as: UInt32.self) else {
+            // This really should be a decoding error
+            return (nil, 7)
         }
         // A full header should be stored for later reference for the current chunkStreamID
         let header = RTMPPacket.Header(
@@ -269,7 +377,6 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
             packetLength: packetLen,
             streamID: streamID
         )
-        knownHeaders[chunkStreamID] = header
-        return header
+        return (header, 11)
     }
 }

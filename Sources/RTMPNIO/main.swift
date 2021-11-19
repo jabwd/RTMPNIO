@@ -55,25 +55,23 @@ final class RTMPSessionHandler: ChannelInboundHandler {
 
         case .c2:
             session.handshake.c2 = true
-            print("Received C2")
             break
 
         case .rtmp:
             print("Channel rcv: \(packet.header.messageID), packetLen: \(String(describing: packet.header.packetLength))")
             if let body = packet.body {
-                print("Got a body: \(body.count)")
-                let decoder = AMFDecoder()
-                var buffer = ByteBuffer(bytes: body)
-                do {
-                    let command = try decoder.decodeCommand(ConnectCommand.self, from: &buffer)
-                    print("Command: \(command)")
-                } catch {
-                    print("\(error)")
-                }
-
-//                let decoder = RawAMFDecoder()
+//                let decoder = AMFDecoder()
 //                var buffer = ByteBuffer(bytes: body)
-//                _ = decoder.decode(&buffer)
+//                do {
+//                    let command = try decoder.decodeCommand(ConnectCommand.self, from: &buffer)
+//                    print("Command: \(command)")
+//                } catch {
+//                    print("\(error)")
+//                }
+
+                let decoder = RawAMFDecoder()
+                var buffer = body
+                _ = decoder.decode(&buffer)
             }
             break
 

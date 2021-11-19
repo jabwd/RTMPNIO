@@ -59,6 +59,15 @@ final class RTMPSessionHandler: ChannelInboundHandler {
 
         case .rtmp:
             print("Channel rcv: \(packet.header.messageID), packetLen: \(String(describing: packet.header.packetLength))")
+            if packet.messageID == .setPacketSize && packet.bodyCount == 4 {
+                guard var body = packet.body else {
+                    return
+                }
+                let newSize = (body.readInteger(endianness: .big, as: UInt32.self) ?? 0) & 0x7F_FF_FF_FF
+                session.receiveChunkSize = Int(newSize)
+                print("Session size updated to \(newSize)")
+                return
+            }
             if let body = packet.body {
 //                let decoder = AMFDecoder()
 //                var buffer = ByteBuffer(bytes: body)

@@ -80,15 +80,13 @@ enum PacketDecodingError: Error {
 }
 
 extension ByteBuffer {
-    mutating func readRTMPHeader() throws -> (HeaderType, UInt32, Int) {
+    mutating func readRTMPHeader() throws -> (HeaderType, UInt32) {
         let byte = readInteger(endianness: .little, as: UInt8.self) ?? 0
-        print("Byte: \(byte)")
 
         guard let headerType = HeaderType(rawValue: (byte >> 6)) else {
             throw PacketDecodingError.decodingHeaderFailed
         }
 
-        var byteCount: Int = 1
         var chunkStreamID: UInt32 = UInt32(byte & 0x3F)
         switch chunkStreamID {
             // 2 Byte variant
@@ -97,7 +95,6 @@ extension ByteBuffer {
                 throw PacketDecodingError.needMoreData
             }
             chunkStreamID |= UInt32(bytes[0])
-            byteCount = 2
             break
 
             // 3 Byte variant
@@ -106,14 +103,13 @@ extension ByteBuffer {
                 throw PacketDecodingError.needMoreData
             }
             chunkStreamID = chunkStreamID | UInt32(bytes[0]) | UInt32(bytes[1])
-            byteCount = 3
             break
 
             // 2-63 chunkStreamID can be kept as-is, so we do nothing here
         default:
             break
         }
-        return (headerType, chunkStreamID, byteCount)
+        return (headerType, chunkStreamID)
     }
 }
 
@@ -202,7 +198,7 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
         let startIndex = buffer.readerIndex
         // TODO: Probably don't need the rtmpByteCount here anymore
         print("Recv, idx \(startIndex)")
-        let (headerType, chunkStreamID, rtmpByteCount) = try buffer.readRTMPHeader()
+        let (headerType, chunkStreamID) = try buffer.readRTMPHeader()
         print("HeaderType: \(headerType), ChunkStreamID: \(chunkStreamID)")
         if headerType == .basic {
             print("Got a basic header, looking for unfinished packets…")

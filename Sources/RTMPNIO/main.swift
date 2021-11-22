@@ -68,7 +68,14 @@ final class RTMPSessionHandler: ChannelInboundHandler {
                 print("Session size updated to \(newSize)")
                 return
             }
-            if let body = packet.body {
+            if var body = packet.body {
+                let decoder = AMFDecoder()
+                do {
+                    let command = try decoder.decodeCommand(ConnectCommand.self, from: &body)
+                    print("Command: \(command)")
+                } catch {
+                    print("\(error)")
+                }
 //                let decoder = AMFDecoder()
 //                var buffer = ByteBuffer(bytes: body)
 //                do {
@@ -78,9 +85,9 @@ final class RTMPSessionHandler: ChannelInboundHandler {
 //                    print("\(error)")
 //                }
 
-                let decoder = RawAMFDecoder()
-                var buffer = body
-                _ = decoder.decode(&buffer)
+//                let decoder = RawAMFDecoder()
+//                var buffer = body
+//                _ = decoder.decode(&buffer)
             }
             break
 

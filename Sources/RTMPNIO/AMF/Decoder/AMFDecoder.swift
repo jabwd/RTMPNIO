@@ -18,11 +18,12 @@ final public class AMFDecoder {
     public var userInfo: [CodingUserInfoKey : Any] = [:]
 
     public func decodeCommand<T>(_ argument: T.Type, from buffer: inout ByteBuffer) throws -> Command<T> where T : Decodable {
+        let buffer = BufferBox(buffer: buffer)
         guard let byte = buffer.readBytes(length: 1)?.first, AMF0TypeMarker(rawValue: byte) == .string else {
             let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command name, marker not a string")
             throw DecodingError.dataCorrupted(context)
         }
-        guard let length = buffer.readInteger(endianness: .big, as: UInt16.self), let name = buffer.readString(length: Int(length)) else {
+        guard let length = buffer.readInteger(as: UInt16.self), let name = buffer.readString(length: Int(length)) else {
             let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command name")
             throw DecodingError.dataCorrupted(context)
         }
@@ -34,7 +35,7 @@ final public class AMFDecoder {
             let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command transactionID, not a number marker")
             throw DecodingError.dataCorrupted(context)
         }
-        guard let transactionIDValue = buffer.readInteger(endianness: .big, as: UInt64.self) else {
+        guard let transactionIDValue = buffer.readInteger(as: UInt64.self) else {
             let context = DecodingError.Context.init(codingPath: [], debugDescription: "Unable to decode command transactionID, unable to read value")
             throw DecodingError.dataCorrupted(context)
         }
@@ -45,10 +46,20 @@ final public class AMFDecoder {
         return Command<T>(name: name, transactionID: transactionID, argument: value)
     }
 
+    public func decode<T>(_ type: T.Type, from buffer: ByteBuffer) throws -> T where T : Decodable {
+        let bufferBox = BufferBox(buffer: buffer)
+        let decoder = _AMFDecoder(buffer: bufferBox, referenceTable: [])
+        return try T(from: decoder)
+    }
+
+    public func decode<T>(_ type: T.Type, from bytes: [UInt8]) throws -> T where T : Decodable {
+        let buffer = ByteBuffer(bytes: bytes)
+        return try decode(type, from: buffer)
+    }
+
     public func decode<T>(_ type: T.Type, from data: Data) throws -> T where T : Decodable {
         let buffer = ByteBuffer(bytes: data)
-        let decoder = _AMFDecoder(buffer: buffer, referenceTable: [])
-        return try T(from: decoder)
+        return try decode(type, from: buffer)
     }
 }
 
@@ -59,10 +70,11 @@ final class _AMFDecoder {
     var container: AMFDecodingContainer?
     var referenceTable: [AMFDecodingContainer]
 
-    fileprivate var buffer: ByteBuffer
+    fileprivate let buffer: BufferBox
 
-    init(buffer: ByteBuffer, referenceTable: [AMFDecodingContainer] = []) {
+    init(buffer: BufferBox, container: AMFDecodingContainer? = nil, referenceTable: [AMFDecodingContainer] = []) {
         self.buffer = buffer
+        self.container = container
         self.referenceTable = referenceTable
     }
 }
@@ -91,6 +103,9 @@ extension _AMFDecoder : Decoder {
     }
 
     func singleValueContainer() throws -> SingleValueDecodingContainer {
+        if container != nil, let container = container as? SingleValueContainer {
+            return container
+        }
         print("Decode single value container")
         precondition(container == nil)
 
@@ -105,7 +120,7 @@ protocol AMFDecodingContainer : AnyObject {
     var codingPath: [CodingKey] { get set }
     var userInfo: [CodingUserInfoKey : Any] { get }
 
-    var buffer: ByteBuffer { get set }
+    var buffer: BufferBox { get }
 }
 
 extension AMFDecodingContainer {
@@ -118,7 +133,7 @@ extension AMFDecodingContainer {
     }
 
     func readInteger<T: FixedWidthInteger>(as: T.Type) throws -> T {
-        guard let value = buffer.readInteger(endianness: .big, as: T.self) else {
+        guard let value = buffer.readInteger(as: T.self) else {
             let context = DecodingError.Context(codingPath: self.codingPath, debugDescription: "Unexpected end of data")
             throw DecodingError.dataCorrupted(context)
         }

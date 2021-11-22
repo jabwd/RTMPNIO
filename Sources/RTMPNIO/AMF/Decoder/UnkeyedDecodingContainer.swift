@@ -4,7 +4,7 @@ extension _AMFDecoder {
     final class UnkeyedContainer {
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey: Any]
-        var buffer: ByteBuffer
+        let buffer: BufferBox
         var referenceTable: [AMFDecodingContainer]
         var marker: AMF0TypeMarker?
         var currentIndex: Int = 0
@@ -31,7 +31,6 @@ extension _AMFDecoder {
         }()
 
         lazy var nestedContainers: [AMFDecodingContainer] = {
-            print("Nested containers called")
             guard let count = self.count else {
                 return []
             }
@@ -39,7 +38,7 @@ extension _AMFDecoder {
             return []
         }()
 
-        init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: [AMFDecodingContainer]) {
+        init(buffer: BufferBox, codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: [AMFDecodingContainer]) {
             self.buffer = buffer
             self.codingPath = codingPath
             self.userInfo = userInfo

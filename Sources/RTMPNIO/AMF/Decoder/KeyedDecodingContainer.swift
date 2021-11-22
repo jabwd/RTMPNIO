@@ -2,7 +2,7 @@ import NIO
 
 extension _AMFDecoder {
     final class KeyedContainer<Key> where Key : CodingKey {
-        var buffer: ByteBuffer
+        let buffer: BufferBox
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey: Any]
         var referenceTable: [AMFDecodingContainer]
@@ -12,7 +12,7 @@ extension _AMFDecoder {
             (try? resolveContainers()) ?? [:]
         }()
 
-        init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: [AMFDecodingContainer] = []) {
+        init(buffer: BufferBox, codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: [AMFDecodingContainer] = []) {
             self.buffer = buffer
             self.codingPath = codingPath
             self.userInfo = userInfo
@@ -119,9 +119,8 @@ extension _AMFDecoder {
             let keyedContainerNestedContainers = keyedContainer.nestedContainers
 
             if containers.isEmpty && keyedContainerNestedContainers.isEmpty {
-                print("Single value container?????")
                 let singleValueContainer = SingleValueContainer(
-                    buffer: &buffer,
+                    buffer: buffer,
                     codingPath: codingPath,
                     userInfo: userInfo,
                     referenceTable: referenceTable
@@ -160,14 +159,14 @@ extension _AMFDecoder.KeyedContainer : KeyedDecodingContainerProtocol {
         return singleValueContainer.decodeNil()
     }
 
-    func decode<T>(_: T.Type, forKey key: Key) throws -> T where T : Decodable {
+    func decode<T>(_ type: T.Type, forKey key: Key) throws -> T where T : Decodable {
         try canDecodeValue(forKey: key)
 
         guard let container = nestedContainers[key.stringValue] else {
             throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Unable to decode nested container for key \(key)")
         }
-        let decoder = _AMFDecoder(buffer: container.buffer, referenceTable: referenceTable)
-
+        // print("key: \(key) \(type) \(container)")
+        let decoder = _AMFDecoder(buffer: container.buffer, container: container, referenceTable: referenceTable)
         return try T(from: decoder)
     }
 

@@ -1,16 +1,27 @@
 import NIO
 
+enum AMFSingleValue {
+    case string(String)
+    case number(Double)
+    case boolean(Bool)
+    case null
+    case object
+    case array
+    case failed
+}
+
 extension _AMFDecoder {
     final class SingleValueContainer {
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey : Any]
         var referenceTable: [AMFDecodingContainer]
-        var buffer: ByteBuffer
+        let buffer: BufferBox
         var index: Int
 
         private let marker: AMF0TypeMarker
+        private let value: AMFSingleValue
 
-        init(buffer: inout ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any], referenceTable: [AMFDecodingContainer]) {
+        init(buffer: BufferBox, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any], referenceTable: [AMFDecodingContainer]) {
             self.codingPath = codingPath
             self.userInfo = userInfo
             self.buffer = buffer
@@ -18,6 +29,32 @@ extension _AMFDecoder {
             self.referenceTable = referenceTable
 
             self.marker = buffer.readMarker() ?? .null
+            print("Single value decoding marker \(marker)")
+            switch marker {
+            case .string, .longString:
+                let length: Int
+                if marker == .string {
+                    length = Int(buffer.readInteger(as: UInt16.self) ?? 0)
+                } else {
+                    length = Int(buffer.readInteger(as: UInt32.self) ?? 0)
+                }
+                let value = buffer.readString(length: length) ?? "ERR"
+                print("\(value)")
+                self.value = .string(value)
+                break
+            case .null, .undefined:
+                self.value = .null
+                break
+            case .number:
+                let value = buffer.readInteger(as: UInt64.self) ?? 0
+                print("Value: \(value)")
+                self.value = .number(Double(bitPattern: value))
+                break
+            default:
+                self.value = .failed
+                print("Unhandled marker in singleValueContainer: \(marker)")
+                break
+            }
         }
     }
 }
@@ -43,6 +80,14 @@ extension _AMFDecoder.SingleValueContainer : SingleValueDecodingContainer {
     }
 
     func decode(_ type: String.Type) throws -> String {
+        switch value {
+        case .string(let value):
+            return value
+        default:
+            let context = DecodingError.Context(codingPath: codingPath, debugDescription: "Expected string got \(marker)")
+            throw DecodingError.typeMismatch(String.self, context)
+        }
+
         let marker = try readMarker()
 
         switch marker {
@@ -61,6 +106,13 @@ extension _AMFDecoder.SingleValueContainer : SingleValueDecodingContainer {
     }
 
     func decode(_ type: Double.Type) throws -> Double {
+        switch value {
+        case .number(let value):
+            return value
+        default:
+            let context = DecodingError.Context(codingPath: codingPath, debugDescription: "Expected number got \(marker)")
+            throw DecodingError.typeMismatch(String.self, context)
+        }
         let marker = try readMarker()
 
         switch marker {

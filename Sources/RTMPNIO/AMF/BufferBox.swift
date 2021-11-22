@@ -14,37 +14,44 @@ enum BufferBoxError: Error {
 final class BufferBox {
     var buffer: ByteBuffer
 
-    init(_ buffer: inout ByteBuffer) {
+    init(buffer: ByteBuffer) {
         self.buffer = buffer
     }
 
     // MARK: -
 
-    func readByte() throws -> UInt8 {
-        guard let byte = buffer.readBytes(length: 1)?.first else {
-            throw BufferBoxError.outOfBytes
-        }
-        return byte
+    func moveReaderIndex(to offset: Int) {
+        buffer.moveReaderIndex(to: offset)
     }
 
-    func readInteger<T: FixedWidthInteger>(as: T.Type) throws -> T {
-        guard let value = buffer.readInteger(endianness: .big, as: T.self) else {
-            throw BufferBoxError.outOfBytes
-        }
-        return value
+    var readerIndex: Int {
+        buffer.readerIndex
     }
 
-    func readString(length: Int) throws -> String {
-        guard let value = buffer.readString(length: length) else {
-            throw BufferBoxError.outOfBytes
-        }
-        return value
+    var writerIndex: Int {
+        buffer.writerIndex
     }
 
-    func readMarker() throws -> AMF0TypeMarker {
-        guard let marker = AMF0TypeMarker(rawValue: try readByte()) else {
-            throw BufferBoxError.outOfBytes
+    func readByte() -> UInt8? {
+        return buffer.readBytes(length: 1)?.first
+    }
+
+    func readBytes(length: Int) -> [UInt8]? {
+        buffer.readBytes(length: length)
+    }
+
+    func readInteger<T: FixedWidthInteger>(as: T.Type) -> T? {
+        buffer.readInteger(endianness: .big, as: T.self)
+    }
+
+    func readString(length: Int) -> String? {
+        buffer.readString(length: length)
+    }
+
+    func readMarker() -> AMF0TypeMarker? {
+        guard let markerByte = readByte() else {
+            return nil
         }
-        return marker
+        return AMF0TypeMarker(rawValue: markerByte)
     }
 }

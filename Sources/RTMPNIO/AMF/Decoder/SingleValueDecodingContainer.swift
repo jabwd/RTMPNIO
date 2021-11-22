@@ -8,12 +8,16 @@ extension _AMFDecoder {
         var buffer: ByteBuffer
         var index: Int
 
-        init(buffer: ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any], referenceTable: [AMFDecodingContainer]) {
+        private let marker: AMF0TypeMarker
+
+        init(buffer: inout ByteBuffer, codingPath: [CodingKey], userInfo: [CodingUserInfoKey : Any], referenceTable: [AMFDecodingContainer]) {
             self.codingPath = codingPath
             self.userInfo = userInfo
             self.buffer = buffer
             self.index = self.buffer.readerIndex
             self.referenceTable = referenceTable
+
+            self.marker = buffer.readMarker() ?? .null
         }
     }
 }

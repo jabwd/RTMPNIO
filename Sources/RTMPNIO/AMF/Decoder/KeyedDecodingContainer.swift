@@ -121,7 +121,7 @@ extension _AMFDecoder {
             if containers.isEmpty && keyedContainerNestedContainers.isEmpty {
                 print("Single value container?????")
                 let singleValueContainer = SingleValueContainer(
-                    buffer: buffer,
+                    buffer: &buffer,
                     codingPath: codingPath,
                     userInfo: userInfo,
                     referenceTable: referenceTable

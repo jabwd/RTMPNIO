@@ -156,16 +156,3 @@ extension AMFDecodingContainer {
         return marker
     }
 }
-
-extension ByteBuffer {
-    mutating func readByte() -> UInt8? {
-        readBytes(length: 1)?.first
-    }
-
-    mutating func readMarker() -> AMF0TypeMarker? {
-        guard let byte = readByte() else {
-            return nil
-        }
-        return AMF0TypeMarker(rawValue: byte)
-    }
-}

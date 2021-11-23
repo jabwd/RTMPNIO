@@ -33,7 +33,7 @@ final class BufferBox {
     }
 
     func readByte() -> UInt8? {
-        return buffer.readBytes(length: 1)?.first
+        buffer.readBytes(length: 1)?.first
     }
 
     func readBytes(length: Int) -> [UInt8]? {
@@ -53,5 +53,28 @@ final class BufferBox {
             return nil
         }
         return AMF0TypeMarker(rawValue: markerByte)
+    }
+}
+
+extension ByteBuffer {
+    mutating func readByte() -> UInt8? {
+        readBytes(length: 1)?.first
+    }
+
+    mutating func readMarker() -> AMF0TypeMarker? {
+        guard let byte = readByte() else {
+            return nil
+        }
+        return AMF0TypeMarker(rawValue: byte)
+    }
+}
+
+extension ByteBuffer {
+    mutating func write(byte: UInt8) {
+        self.writeBytes([byte])
+    }
+
+    mutating func write(marker: AMF0TypeMarker) {
+        self.write(byte: marker.rawValue)
     }
 }

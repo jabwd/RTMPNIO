@@ -123,7 +123,7 @@ extension _AMFEncoder.SingleValueContainer : SingleValueEncodingContainer {
         defer { self.canEncodeNewValue = false }
 
         let encoder = _AMFEncoder()
-        // try value.encode(to: encoder)
+        try value.encode(to: encoder)
         var buff = encoder.buffer
         storage.writeBuffer(&buff)
     }

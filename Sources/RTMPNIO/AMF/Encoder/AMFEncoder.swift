@@ -9,6 +9,8 @@ import Foundation
 import NIO
 
 final public class AMFEncoder {
+    public static let EncodeAsECMAArray: CodingUserInfoKey = CodingUserInfoKey(rawValue: "EncodeAsECMAArray")!
+
     public init() {}
 
     public var userInfo: [CodingUserInfoKey: Any] = [:]
@@ -34,11 +36,31 @@ class _AMFEncoder {
     }
 }
 
-extension _AMFEncoder {
-    // func container<Key>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> where Key : CodingKey {
-    //     let container = KeyedContainer<Key>(codingPath: self.codingPath, userInfo: userInfo)
-    //     self.container = container
+extension _AMFEncoder: Encoder {
+    func container<Key>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> where Key : CodingKey {
+        precondition(self.container == nil)
 
-    //     return KeyedEncodingContainer(container)
-    // }
+        let container = KeyedContainer<Key>(codingPath: self.codingPath, userInfo: userInfo)
+        self.container = container
+
+        return KeyedEncodingContainer(container)
+    }
+
+    func unkeyedContainer() -> UnkeyedEncodingContainer {
+        precondition(self.container == nil)
+
+        let container = UnkeyedContainer(codingPath: codingPath, userInfo: userInfo)
+        self.container = container
+
+        return container
+    }
+
+    func singleValueContainer() -> SingleValueEncodingContainer {
+        precondition(self.container == nil)
+
+        let container = SingleValueContainer(codingPath: codingPath, userInfo: userInfo)
+        self.container = container
+
+        return container
+    }
 }

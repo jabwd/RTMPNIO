@@ -43,11 +43,10 @@ extension _AMFEncoder.UnkeyedContainer : UnkeyedEncodingContainer {
     }
 
     func nestedContainer<NestedKey>(keyedBy keyType: NestedKey.Type) -> KeyedEncodingContainer<NestedKey> where NestedKey : CodingKey {
-        fatalError("Not implemented")
-//        let container = _AMFEncoder.KeyedContainer<NestedKey>(codingPath: nestedCodingPath, userInfo: userInfo)
-//        storage.append(container)
-//
-//        return KeyedEncodingContainer(container)
+        let container = _AMFEncoder.KeyedContainer<NestedKey>(codingPath: nestedCodingPath, userInfo: userInfo)
+        storage.append(container)
+
+        return KeyedEncodingContainer(container)
     }
 
     func nestedUnkeyedContainer() -> UnkeyedEncodingContainer {
@@ -65,7 +64,13 @@ extension _AMFEncoder.UnkeyedContainer : UnkeyedEncodingContainer {
 extension _AMFEncoder.UnkeyedContainer : _AMFEncodingContainer {
     var buffer: ByteBuffer {
         var buffer = ByteBuffer()
-        fatalError("Not implemented")
+
+        buffer.write(marker: .strictArray)
+        buffer.writeInteger(UInt32(storage.count), endianness: .big, as: UInt32.self)
+        for container in storage {
+            var buff = container.buffer
+            buffer.writeBuffer(&buff)
+        }
         return buffer
     }
 }

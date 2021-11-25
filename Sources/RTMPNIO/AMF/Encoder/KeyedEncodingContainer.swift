@@ -61,8 +61,38 @@ extension _AMFEncoder.KeyedContainer : _AMFEncodingContainer {
     var buffer: ByteBuffer {
         var buffer = ByteBuffer()
 
-        buffer.write(marker: .object)
-        fatalError("Not implemented")
+        // TODO: Option for encoding as an ECMAArray
+        let isEcmaArray = false
+
+        if isEcmaArray {
+            buffer.write(marker: .ecmaArray)
+
+            let count = UInt32(storage.count)
+            buffer.writeInteger(count, endianness: .big, as: UInt32.self)
+            let sorted = storage.sorted(by: { (lh, rh) -> Bool in
+                lh.key.stringValue > rh.key.stringValue
+            })
+            for item in sorted {
+                let length = UInt16(item.key.stringValue.count)
+                buffer.writeInteger(length, endianness: .big, as: UInt16.self)
+                buffer.writeString(item.key.stringValue)
+                var valueBuff = item.value.buffer
+                buffer.writeBuffer(&valueBuff)
+            }
+        } else {
+            buffer.write(marker: .object)
+
+            for (key, container) in storage {
+                let length = UInt16(key.stringValue.count)
+                buffer.writeInteger(length, endianness: .big, as: UInt16.self)
+                buffer.writeString(key.stringValue)
+                var valueBuff = container.buffer
+                buffer.writeBuffer(&valueBuff)
+            }
+        }
+
+        // Both these end markers work for both types, object and ecma array
+        buffer.writeInteger(0, endianness: .big, as: UInt16.self)
         buffer.write(marker: .objectEnd)
 
         return buffer

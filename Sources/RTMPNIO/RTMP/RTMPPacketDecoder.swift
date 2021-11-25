@@ -81,7 +81,7 @@ enum PacketDecodingError: Error {
 
 extension ByteBuffer {
     mutating func readRTMPHeader() throws -> (HeaderType, UInt32) {
-        let byte = readInteger(endianness: .little, as: UInt8.self) ?? 0
+        let byte = readInteger(endianness: .big, as: UInt8.self) ?? 0
 
         guard let headerType = HeaderType(rawValue: (byte >> 6)) else {
             throw PacketDecodingError.decodingHeaderFailed
@@ -110,6 +110,21 @@ extension ByteBuffer {
             break
         }
         return (headerType, chunkStreamID)
+    }
+
+    mutating func writeRTMPHeader(type: HeaderType, chunkStreamID: UInt32) throws {
+        let typeBits: UInt8 = (type.rawValue & 0x3) << 6
+        let chunkBits: UInt8 = UInt8(chunkStreamID & 0x3F)
+
+        if chunkStreamID > 1 && chunkStreamID < 64 {
+            let byte = UInt8(typeBits | chunkBits)
+            writeBytes([byte])
+            return
+        } else if chunkStreamID > 65535 {
+            fatalError("Not implemented")
+        } else {
+            fatalError("Large chunkStreamID not implemented")
+        }
     }
 }
 
@@ -311,11 +326,6 @@ final class RTMPPacketDecoder: ByteToMessageDecoder {
 //        // print("dat: \(dat.count) \(dat.hexEncodedString(options: []))")
 //        let data = self.wrapInboundOut(packet)
 //        context.fireChannelRead(data)
-    }
-
-    private func peekPacketLength(_ buffer: inout ByteBuffer) -> Int {
-        let startIndex = buffer.readerIndex
-        return 0
     }
 
     private func decodeHeader(_ buffer: inout ByteBuffer, chunkStreamID: UInt32, type: HeaderType) -> (RTMPPacket.Header?, Int) {

@@ -11,6 +11,14 @@ enum HeaderType: UInt8 {
     case basic = 0x3
 }
 
+struct VersionArgument: Codable {
+    let fmsVer: String
+    let capabilities: Double
+    let mode: Double
+}
+
+
+
 final class RTMPSessionHandler: ChannelInboundHandler {
     public typealias InboundIn = RTMPPacket
     public typealias OutboundOut = RTMPPacket
@@ -72,7 +80,13 @@ final class RTMPSessionHandler: ChannelInboundHandler {
                 let decoder = AMFDecoder()
                 do {
                     let command = try decoder.decodeCommand(ConnectCommand.self, from: &body)
+                    if command.name == "connect" {
+                        print("CONNECT")
+                    }
                     print("Command: \(command)")
+
+                    // Try to respond :>
+
                 } catch {
                     print("\(error)")
                 }

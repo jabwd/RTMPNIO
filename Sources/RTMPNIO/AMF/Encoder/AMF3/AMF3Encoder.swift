@@ -7,7 +7,3 @@ class _AMF3Encoder {
 
     fileprivate var container: _AMFEncodingContainer?
 }
-
-protocol _AMF3EncodingContainer {
-    var buffer: ByteBuffer
-}

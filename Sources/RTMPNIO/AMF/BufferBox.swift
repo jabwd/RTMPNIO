@@ -77,4 +77,8 @@ extension ByteBuffer {
     mutating func write(marker: AMF0TypeMarker) {
         self.write(byte: marker.rawValue)
     }
+
+    mutating func write(amf3Marker marker: AMF3TypeMarker) {
+        self.write(byte: marker.rawValue)
+    }
 }

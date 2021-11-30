@@ -1,4 +1,5 @@
 import NIO
+import Foundation
 
 extension _AMF3Encoder {
     final class SingleValueContainer {
@@ -41,6 +42,30 @@ extension _AMF3Encoder.SingleValueContainer {
     func encode(_ value: String) throws {
         try checkCanEncode(value: nil)
         defer { self.canEncodeNewValue = false }
+
+        storage.write(amf3Marker: .string)
+        var length = try UInt32(value.count).uint29Representation()
+        storage.writeBuffer(&length)
+        storage.writeString(value)
+    }
+
+    func encode(_ value: Data) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        storage.write(amf3Marker: .byteArray)
+        var length = try UInt32(value.count).uint29Representation()
+        storage.writeBuffer(&length)
+        storage.writeBytes(value)
+    }
+
+    func encode(_ value: Date) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        let dateValue = value.timeIntervalSince1970 * 1000
+        storage.write(amf3Marker: .date)
+        storage.writeInteger(dateValue.bitPattern, endianness: .big, as: UInt64.self)
     }
 
     func encode(_ value: Double) throws {

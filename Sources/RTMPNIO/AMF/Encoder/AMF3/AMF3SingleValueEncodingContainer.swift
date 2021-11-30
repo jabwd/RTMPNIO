@@ -46,9 +46,86 @@ extension _AMF3Encoder.SingleValueContainer {
     func encode(_ value: Double) throws {
         try checkCanEncode(value: nil)
         defer { self.canEncodeNewValue = false }
+
+        storage.write(amf3Marker: .double)
+        storage.writeInteger(value.bitPattern, endianness: .big, as: UInt64.self)
     }
 
     func encode(_ value: Float) throws {
+        try encode(Double(value))
+    }
+
+    func encode(_ value: UInt8) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        storage.write(amf3Marker: .integer)
+        var buff = try UInt32(value).uint29Representation()
+        storage.writeBuffer(&buff)
+    }
+
+    func encode(_ value: UInt16) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        storage.write(amf3Marker: .integer)
+        var buff = try UInt32(value).uint29Representation()
+        storage.writeBuffer(&buff)
+    }
+
+    func encode(_ value: UInt32) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        do {
+            var buff = try value.uint29Representation()
+            storage.write(amf3Marker: .integer)
+            storage.writeBuffer(&buff)
+        } catch {
+            try encode(Double(value))
+        }
+    }
+
+    func encode(_ value: UInt64) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        let v = Double(bitPattern: value)
+        try encode(v)
+    }
+
+    func encode(_ value: Int8) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        try encode(Double(value))
+    }
+
+    func encode(_ value: Int16) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        try encode(Double(value))
+    }
+
+    func encode(_ value: Int32) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        try encode(Double(value))
+    }
+
+    func encode(_ value: Int64) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        try encode(Double(value))
+    }
+
+    func encode(_ value: Int) throws {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
         try encode(Double(value))
     }
 }

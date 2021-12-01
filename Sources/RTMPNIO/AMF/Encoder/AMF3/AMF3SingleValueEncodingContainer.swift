@@ -49,6 +49,16 @@ extension _AMF3Encoder.SingleValueContainer {
         storage.writeString(value)
     }
 
+    func encode<T>(_ value: T) throws where T: Encodable {
+        try checkCanEncode(value: nil)
+        defer { self.canEncodeNewValue = false }
+
+        let encoder = _AMF3Encoder()
+        // try value.encode(to: encoder)
+        var buff = encoder.buffer
+        storage.writeBuffer(&buff)
+    }
+
     func encode(_ value: Data) throws {
         try checkCanEncode(value: nil)
         defer { self.canEncodeNewValue = false }

@@ -2,10 +2,16 @@ import NIO
 import Foundation
 
 extension _AMF3Encoder {
-    final class SingleValueContainer {
+    final class SingleValueContainer: AMF3EncodingContainer {
         private var storage: ByteBuffer = ByteBuffer()
 
         fileprivate var canEncodeNewValue = true
+
+        var buffer: ByteBuffer {
+            get {
+                storage
+            }
+        }
 
         fileprivate func checkCanEncode(value: Any?) throws {
             guard self.canEncodeNewValue else {
@@ -16,15 +22,17 @@ extension _AMF3Encoder {
 
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey: Any]
+        let referenceTable: AMF3EncodingReferenceTable
 
-        init(codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any]) {
+        init(codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: AMF3EncodingReferenceTable) {
             self.codingPath = codingPath
             self.userInfo = userInfo
+            self.referenceTable = referenceTable
         }
     }
 }
 
-extension _AMF3Encoder.SingleValueContainer {
+extension _AMF3Encoder.SingleValueContainer : SingleValueEncodingContainer {
     func encodeNil() throws {
         try checkCanEncode(value: nil)
         defer { self.canEncodeNewValue = false }
@@ -54,7 +62,7 @@ extension _AMF3Encoder.SingleValueContainer {
         defer { self.canEncodeNewValue = false }
 
         let encoder = _AMF3Encoder()
-        // try value.encode(to: encoder)
+        try value.encode(to: encoder)
         var buff = encoder.buffer
         storage.writeBuffer(&buff)
     }

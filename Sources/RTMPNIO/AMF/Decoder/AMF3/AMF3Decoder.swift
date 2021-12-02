@@ -18,3 +18,9 @@ final class _AMF3Decoder {
         self.referenceTable = referenceTable
     }
 }
+
+protocol AMF3DecodingContainer {
+    var buffer: ByteBuffer {
+        get set
+    }
+}

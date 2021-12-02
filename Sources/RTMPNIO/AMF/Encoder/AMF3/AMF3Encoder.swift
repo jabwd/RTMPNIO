@@ -17,7 +17,7 @@ class _AMF3Encoder {
 
     fileprivate var container: AMF3EncodingContainer?
 
-    let referenceTable = AMF3EncodingReferenceTable()
+    let referenceTable = AMF3ReferenceTable()
 
     var buffer: ByteBuffer {
         return container?.buffer ?? ByteBuffer()

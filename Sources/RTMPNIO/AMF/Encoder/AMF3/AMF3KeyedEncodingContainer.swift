@@ -7,13 +7,13 @@ extension _AMF3Encoder {
 
         var codingPath: [CodingKey]
         var userInfo: [CodingUserInfoKey: Any]
-        let referenceTable: AMF3EncodingReferenceTable
+        let referenceTable: AMF3ReferenceTable
 
         func nestedCodingPath(forKey key: CodingKey) -> [CodingKey] {
             codingPath + [key]
         }
 
-        init(codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: AMF3EncodingReferenceTable) {
+        init(codingPath: [CodingKey], userInfo: [CodingUserInfoKey: Any], referenceTable: AMF3ReferenceTable) {
             self.codingPath = codingPath
             self.userInfo = userInfo
             self.referenceTable = referenceTable
